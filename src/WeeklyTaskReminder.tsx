@@ -19,17 +19,22 @@ import {
 } from 'lucide-react';
 
 /* ─── Types ─────────────────────────────────────────────────── */
+type Priority = 'high' | 'medium' | 'low';
+
 interface Step {
   id: string;
   name: string;
   done: boolean;
+  duration?: number;
+  priority: Priority;
 }
 
 interface Task {
   id: string;
   name: string;
-  days: string[]; // 't2'|'t3'|'t4'|'t5'|'t6'
+  days: string[];
   steps: Step[];
+  priority: Priority;
 }
 
 type View = 'overview' | 'detail' | 'add';
@@ -63,39 +68,66 @@ const STATUS_ICONS: Record<TaskStatus, JSX.Element> = {
   done: <CheckCircle2 className="w-4 h-4" />,
 };
 
+const PRIORITY_COLORS: Record<Priority, string> = {
+  high: 'border-red-500',
+  medium: 'border-yellow-400',
+  low: 'border-green-400',
+};
+
+const PRIORITY_DOT_COLORS: Record<Priority, string> = {
+  high: 'bg-red-500',
+  medium: 'bg-yellow-400',
+  low: 'bg-green-400',
+};
+
+const PRIORITY_BTN_ACTIVE: Record<Priority, string> = {
+  high: 'bg-red-100 text-red-600 border-red-300 ring-1 ring-red-200',
+  medium: 'bg-yellow-100 text-yellow-700 border-yellow-300 ring-1 ring-yellow-200',
+  low: 'bg-green-100 text-green-700 border-green-300 ring-1 ring-green-200',
+};
+
+const PRIORITY_BTN_INACTIVE: Record<Priority, string> = {
+  high: 'bg-red-50 text-red-400 border-red-100',
+  medium: 'bg-yellow-50 text-yellow-400 border-yellow-100',
+  low: 'bg-green-50 text-green-400 border-green-100',
+};
+
 /* ─── Demo Data ──────────────────────────────────────────────── */
 const DEMO_TASKS: Task[] = [
   {
     id: 'demo-1',
     name: 'Họp team cả tuần',
     days: ['t2', 't3', 't4', 't5', 't6'],
+    priority: 'medium',
     steps: [
-      { id: 'd1-1', name: 'Chuẩn bị agenda', done: false },
-      { id: 'd1-2', name: 'Gửi thư mời cho team', done: false },
-      { id: 'd1-3', name: 'Ghi chép biên bản', done: false },
-      { id: 'd1-4', name: 'Theo dõi follow-up tasks', done: false },
+      { id: 'd1-1', name: 'Chuẩn bị agenda', done: false, duration: 15, priority: 'medium' },
+      { id: 'd1-2', name: 'Gửi thư mời cho team', done: false, duration: 5, priority: 'low' },
+      { id: 'd1-3', name: 'Ghi chép biên bản', done: false, duration: 30, priority: 'medium' },
+      { id: 'd1-4', name: 'Theo dõi follow-up tasks', done: false, duration: 10, priority: 'low' },
     ],
   },
   {
     id: 'demo-2',
     name: 'Review code pull requests',
     days: ['t2', 't4', 't6'],
+    priority: 'high',
     steps: [
-      { id: 'd2-1', name: 'Mở PR trên GitHub', done: false },
-      { id: 'd2-2', name: 'Kiểm tra logic & style', done: false },
-      { id: 'd2-3', name: 'Viết review comments', done: false },
-      { id: 'd2-4', name: 'Merge hoặc request changes', done: false },
+      { id: 'd2-1', name: 'Mở PR trên GitHub', done: false, duration: 5, priority: 'high' },
+      { id: 'd2-2', name: 'Kiểm tra logic & style', done: false, duration: 20, priority: 'high' },
+      { id: 'd2-3', name: 'Viết review comments', done: false, duration: 15, priority: 'medium' },
+      { id: 'd2-4', name: 'Merge hoặc request changes', done: false, duration: 5, priority: 'medium' },
     ],
   },
   {
     id: 'demo-3',
     name: 'Cập nhật báo cáo tuần',
     days: ['t6'],
+    priority: 'low',
     steps: [
-      { id: 'd3-1', name: 'Thu thập số liệu từ các module', done: false },
-      { id: 'd3-2', name: 'Viết nội dung báo cáo', done: false },
-      { id: 'd3-3', name: 'Đính kèm biểu đồ & metrics', done: false },
-      { id: 'd3-4', name: 'Gửi email cho manager', done: false },
+      { id: 'd3-1', name: 'Thu thập số liệu từ các module', done: false, duration: 20, priority: 'medium' },
+      { id: 'd3-2', name: 'Viết nội dung báo cáo', done: false, duration: 30, priority: 'low' },
+      { id: 'd3-3', name: 'Đính kèm biểu đồ & metrics', done: false, duration: 10, priority: 'low' },
+      { id: 'd3-4', name: 'Gửi email cho manager', done: false, duration: 5, priority: 'high' },
     ],
   },
 ];
@@ -129,12 +161,18 @@ function getRemainingSteps(task: Task): number {
   return task.steps.filter((s) => !s.done).length;
 }
 
+function getTotalDuration(task: Task): number | null {
+  const durations = task.steps.map((s) => s.duration).filter((d): d is number => d !== undefined);
+  if (durations.length === 0) return null;
+  return durations.reduce((sum, d) => sum + d, 0);
+}
+
 function isToday(dayKey: string): boolean {
   return dayKey === getTodayKey();
 }
 
 function getStorageKey(): string {
-  return 'weekly-task-reminder-v1';
+  return 'wtr_v3';
 }
 
 function loadTasks(): Task[] {
@@ -151,6 +189,50 @@ function saveTasks(tasks: Task[]): void {
   localStorage.setItem(getStorageKey(), JSON.stringify(tasks));
 }
 
+/* ─── Priority Selector Component ─────────────────────────── */
+function PrioritySelector({
+  value,
+  onChange,
+  size = 'sm',
+}: {
+  value: Priority;
+  onChange: (p: Priority) => void;
+  size?: 'sm' | 'md';
+}) {
+  const options: { p: Priority; label: string }[] = [
+    { p: 'high', label: 'Cao' },
+    { p: 'medium', label: 'Trung bình' },
+    { p: 'low', label: 'Thấp' },
+  ];
+  const activeClass = size === 'sm'
+    ? 'text-xs px-2.5 py-1 rounded-lg font-medium border transition-all'
+    : 'text-sm px-3 py-2 rounded-xl font-semibold border transition-all';
+  const inactiveClass = size === 'sm'
+    ? 'text-xs px-2.5 py-1 rounded-lg font-medium border transition-all'
+    : 'text-sm px-3 py-2 rounded-xl font-semibold border transition-all';
+
+  return (
+    <div className="flex gap-1.5">
+      {options.map(({ p, label }) => {
+        const isActive = value === p;
+        return (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onChange(p)}
+            className={`${isActive ? activeClass : inactiveClass} ${
+              isActive ? PRIORITY_BTN_ACTIVE[p] : PRIORITY_BTN_INACTIVE[p]
+            }`}
+          >
+            {p === 'high' && '🔴 '}{p === 'medium' && '🟡 '}{p === 'low' && '🟢 '}
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ─── Main Component ─────────────────────────────────────────── */
 export default function WeeklyTaskReminder() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -160,8 +242,9 @@ export default function WeeklyTaskReminder() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [newTask, setNewTask] = useState({
     name: '',
+    priority: 'medium' as Priority,
     days: [] as string[],
-    steps: [{ id: uid(), name: '', done: false }],
+    steps: [{ id: uid(), name: '', done: false, priority: 'medium' as Priority }],
   });
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
@@ -187,9 +270,21 @@ export default function WeeklyTaskReminder() {
     if (newTask.days.length === 0) return;
     setTasks((prev) => [
       ...prev,
-      { id: uid(), name: newTask.name.trim(), days: newTask.days, steps: validSteps },
+      {
+        id: uid(),
+        name: newTask.name.trim(),
+        priority: newTask.priority,
+        days: newTask.days,
+        steps: validSteps.map((s) => ({
+          id: s.id,
+          name: s.name,
+          done: false,
+          duration: s.duration,
+          priority: s.priority,
+        })),
+      },
     ]);
-    setNewTask({ name: '', days: [], steps: [{ id: uid(), name: '', done: false }] });
+    setNewTask({ name: '', priority: 'medium', days: [], steps: [{ id: uid(), name: '', done: false, priority: 'medium' }] });
     setView('overview');
   };
 
@@ -229,7 +324,7 @@ export default function WeeklyTaskReminder() {
   const addStepToForm = () => {
     setNewTask((prev) => ({
       ...prev,
-      steps: [...prev.steps, { id: uid(), name: '', done: false }],
+      steps: [...prev.steps, { id: uid(), name: '', done: false, priority: 'medium' }],
     }));
   };
 
@@ -244,6 +339,20 @@ export default function WeeklyTaskReminder() {
     setNewTask((prev) => ({
       ...prev,
       steps: prev.steps.map((s) => (s.id === stepId ? { ...s, name } : s)),
+    }));
+  };
+
+  const updateStepDurationInForm = (stepId: string, duration: number | undefined) => {
+    setNewTask((prev) => ({
+      ...prev,
+      steps: prev.steps.map((s) => (s.id === stepId ? { ...s, duration } : s)),
+    }));
+  };
+
+  const updateStepPriorityInForm = (stepId: string, priority: Priority) => {
+    setNewTask((prev) => ({
+      ...prev,
+      steps: prev.steps.map((s) => (s.id === stepId ? { ...s, priority } : s)),
     }));
   };
 
@@ -338,7 +447,10 @@ export default function WeeklyTaskReminder() {
                             {STATUS_ICONS[status]}
                           </span>
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-800 truncate">{task.name}</p>
+                            <div className="flex items-center gap-1.5">
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${PRIORITY_DOT_COLORS[task.priority]}`} />
+                              <p className="text-sm font-semibold text-slate-800 truncate">{task.name}</p>
+                            </div>
                             <p className="text-xs text-slate-500 mt-0.5">
                               {remaining === 0
                                 ? 'Hoàn thành!'
@@ -384,21 +496,23 @@ export default function WeeklyTaskReminder() {
               Tuần làm việc · {new Date().toLocaleDateString('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' })}
             </p>
           </div>
-          <button
-            onClick={() => setView('add')}
-            className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-2 transition-all duration-200 active:scale-[0.97] shadow-lg shadow-blue-200"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Thêm Task</span>
-          </button>
-          <button
-            onClick={() => setShowResetConfirm(true)}
-            className="bg-white hover:bg-slate-50 text-slate-500 rounded-xl px-3 py-2.5 text-sm font-medium flex items-center gap-2 transition-all duration-200 border border-slate-200 active:scale-[0.97]"
-            title="Khôi phục dữ liệu mẫu"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span className="hidden sm:inline">Reset</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              className="bg-white hover:bg-slate-50 text-slate-500 rounded-xl px-3 py-2.5 text-sm font-medium flex items-center gap-2 transition-all duration-200 border border-slate-200 active:scale-[0.97]"
+              title="Khôi phục dữ liệu mẫu"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="hidden sm:inline">Reset</span>
+            </button>
+            <button
+              onClick={() => setView('add')}
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-2 transition-all duration-200 active:scale-[0.97] shadow-lg shadow-blue-200"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Thêm Task</span>
+            </button>
+          </div>
         </div>
 
         {/* ── Views ── */}
@@ -427,6 +541,18 @@ export default function WeeklyTaskReminder() {
                   onChange={(e) => setNewTask((p) => ({ ...p, name: e.target.value }))}
                   placeholder="VD: Họp team cả tuần"
                   className="w-full px-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white placeholder-slate-400"
+                />
+              </div>
+
+              {/* Task Priority */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Độ ưu tiên
+                </label>
+                <PrioritySelector
+                  value={newTask.priority}
+                  onChange={(p) => setNewTask((prev) => ({ ...prev, priority: p }))}
+                  size="md"
                 />
               </div>
 
@@ -475,19 +601,42 @@ export default function WeeklyTaskReminder() {
                 </div>
                 <div className="space-y-2">
                   {newTask.steps.map((step, i) => (
-                    <div key={step.id} className="flex items-center gap-2">
-                      <span className="text-xs text-slate-400 w-5 text-center shrink-0">{i + 1}</span>
-                      <input
-                        type="text"
-                        value={step.name}
-                        onChange={(e) => updateStepNameInForm(step.id, e.target.value)}
-                        placeholder={`Bước ${i + 1}`}
-                        className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white placeholder-slate-400"
-                      />
+                    <div key={step.id} className="flex items-start gap-2">
+                      <span className="text-xs text-slate-400 w-5 text-center shrink-0 mt-2.5">{i + 1}</span>
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <input
+                          type="text"
+                          value={step.name}
+                          onChange={(e) => updateStepNameInForm(step.id, e.target.value)}
+                          placeholder={`Bước ${i + 1}`}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white placeholder-slate-400"
+                        />
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            value={step.duration ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateStepDurationInForm(step.id, val === '' ? undefined : Math.max(1, parseInt(val) || 0));
+                            }}
+                            placeholder="phút"
+                            min="1"
+                            className="w-20 px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white placeholder-slate-400"
+                          />
+                          <span className="text-xs text-slate-400">phút</span>
+                          <div className="ml-2">
+                            <PrioritySelector
+                              value={step.priority}
+                              onChange={(p) => updateStepPriorityInForm(step.id, p)}
+                              size="sm"
+                            />
+                          </div>
+                        </div>
+                      </div>
                       <button
                         onClick={() => removeStepFromForm(step.id)}
                         disabled={newTask.steps.length <= 1}
-                        className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="mt-2 p-1.5 text-slate-400 hover:text-red-500 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -528,7 +677,10 @@ export default function WeeklyTaskReminder() {
                 <ChevronLeft className="w-4 h-4 text-slate-600" />
               </button>
               <div className="min-w-0 flex-1">
-                <h2 className="text-base font-semibold text-slate-800 truncate">{selectedTask.name}</h2>
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${PRIORITY_DOT_COLORS[selectedTask.priority]}`} />
+                  <h2 className="text-base font-semibold text-slate-800 truncate">{selectedTask.name}</h2>
+                </div>
                 <p className="text-xs text-slate-500">
                   {selectedTask.days.map((d) => DAY_LABELS[d]).join(', ')}
                 </p>
@@ -589,13 +741,19 @@ export default function WeeklyTaskReminder() {
                         )}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <span
-                          className={`text-sm block transition-colors ${
-                            step.done ? 'text-emerald-600 line-through' : 'text-slate-700'
-                          }`}
-                        >
-                          {step.name}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${PRIORITY_DOT_COLORS[step.priority]}`} />
+                          <span
+                            className={`text-sm block transition-colors ${
+                              step.done ? 'text-emerald-600 line-through' : 'text-slate-700'
+                            }`}
+                          >
+                            {step.name}
+                          </span>
+                          {step.duration !== undefined && (
+                            <span className="text-xs text-slate-400 shrink-0">⏱ {step.duration}m</span>
+                          )}
+                        </div>
                       </div>
                       <span
                         className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${
@@ -647,8 +805,8 @@ export default function WeeklyTaskReminder() {
                 return (
                   <div
                     key={day}
-                    className={`bg-white rounded-xl shadow-sm border overflow-hidden transition-all duration-200 ${
-                      today ? 'border-blue-300 ring-1 ring-blue-100' : 'border-slate-100'
+                    className={`bg-white rounded-xl shadow-sm overflow-hidden transition-all duration-200 ${
+                      today ? 'border-blue-300 ring-1 ring-blue-100' : 'border border-slate-100'
                     }`}
                   >
                     {/* Day header */}
@@ -689,25 +847,34 @@ export default function WeeklyTaskReminder() {
                         {dayTasks.map((task) => {
                           const status = getTaskStatus(task);
                           const remaining = getRemainingSteps(task);
+                          const totalDuration = getTotalDuration(task);
                           return (
                             <li key={task.id}>
                               <button
                                 onClick={() => openTaskDetail(task.id)}
-                                className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left group"
+                                className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left group border-l-[3px] ${PRIORITY_COLORS[task.priority]}`}
                               >
                                 <div className="flex items-center gap-3 min-w-0">
                                   <span className={`shrink-0 ${STATUS_COLORS[status]}`}>
                                     {STATUS_ICONS[status]}
                                   </span>
                                   <div className="min-w-0">
-                                    <p className="text-sm font-medium text-slate-800 truncate group-hover:text-blue-700 transition-colors">
-                                      {task.name}
-                                    </p>
-                                    <p className="text-xs text-slate-400 mt-0.5">
-                                      {remaining === 0
-                                        ? '✓ Hoàn thành'
-                                        : `${remaining} bước chưa xong`}
-                                    </p>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={`w-2 h-2 rounded-full shrink-0 ${PRIORITY_DOT_COLORS[task.priority]}`} />
+                                      <p className="text-sm font-medium text-slate-800 truncate group-hover:text-blue-700 transition-colors">
+                                        {task.name}
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <p className="text-xs text-slate-400">
+                                        {remaining === 0
+                                          ? '✓ Hoàn thành'
+                                          : `${remaining} bước chưa xong`}
+                                      </p>
+                                      {totalDuration !== null && (
+                                        <span className="text-xs text-slate-400">· ~{totalDuration}m</span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-3 shrink-0">
